@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, num_heads: int, context_len: int = 1024, dropout: float = 0.1, bias: bool = False):
+    def __init__(self, in_dim: int, out_dim: int, num_heads: int, context_len: int = 1024, dropout: float = 0.1, bias: bool = False) -> None:
         """
         Initialize the MultiHeadAttention module.
         Example:
@@ -69,10 +69,10 @@ class MultiHeadAttention(nn.Module):
 
 
 class GELU(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return 0.5 * x * (1 + torch.tanh(
             torch.sqrt(torch.tensor(2.0 / torch.pi)) *
             (x + 0.044715 * torch.pow(x, 3))
@@ -80,7 +80,7 @@ class GELU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, in_dim: int):
+    def __init__(self, in_dim: int) -> None:
         """
         Initialize the FeedForward module.
         Example:
@@ -111,10 +111,6 @@ class TransformerBlock(nn.Module):
 
         Example:
         >>> transformer_block = TransformerBlock(32, 128, 8, 0.1, False)
-        >>> x = torch.randn(8, 10, 32)
-        >>> out = transformer_block(x)
-        >>> out.shape
-        torch.Size([8, 10, 32])
 
         Args:
             emb_dim (int): The embedding dimension of the model.
@@ -140,6 +136,23 @@ class TransformerBlock(nn.Module):
         self.dropout_layer = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Performs a forward pass through the TransformerBlock module.
+
+        Example:
+        >>> transformer_block = TransformerBlock(32, 128, 8, 0.1, False)
+        >>> x = torch.randn(8, 10, 32)
+        >>> out = transformer_block(x)
+        >>> out.shape
+        torch.Size([8, 10, 32])
+
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch_size, sequence_length, emb_dim].
+
+        Returns:
+            torch.Tensor: Output tensor of shape [batch_size, sequence_length, emb_dim] after
+            passing through layer normalization, multi-head attention, dropout, and feedforward network.
+        """
         shortcut = x
         x = self.layer_norm1(x)
         x = self.mha(x)

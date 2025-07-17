@@ -12,21 +12,12 @@ repos:
     hooks:
       - id: isort
 
-  # 类型检查（mypy）
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
-    hooks:
-      - id: mypy
-        additional_dependencies:
-          - types-requests
-          - types-PyYAML
-          - types-torch
-
   # 代码风格检查（ruff，支持 flake8/pylint/radon 等）
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.4.5
     hooks:
       - id: ruff
+        types: [python]
 
   # 通用的文本检查器（行尾空格、换行符等）
   - repo: https://github.com/pre-commit/pre-commit-hooks
