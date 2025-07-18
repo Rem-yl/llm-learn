@@ -46,7 +46,6 @@ class MultiHeadAttention(nn.Module):
         self.register_buffer("mask", torch.triu(torch.ones(context_len, context_len), diagonal=1), persistent=False)
         self.register_buffer("cache_k", None, persistent=False)
         self.register_buffer("cache_v", None, persistent=False)
-        self.ptr_current_pos = 0    # 记录当前生成到第几个token
 
     def forward(self, x: torch.Tensor, use_cache: bool = False) -> torch.Tensor:
         """
@@ -84,22 +83,15 @@ class MultiHeadAttention(nn.Module):
             if self.cache_v is None:
                 self.cache_v, self.cache_k = value, key
             else:
-                self.cache_v = torch.cat((self.cache_v, value), dim=-2)
-                self.cache_k = torch.cat((self.cache_k, key), dim=-2)
-                self.ptr_current_pos += seq_len
+                self.cache_v = torch.cat((self.cache_v, value), dim=-2)[:, :, -self.context_len:, :]
+                self.cache_k = torch.cat((self.cache_k, key), dim=-2)[:, :, -self.context_len:, :]
             value, key = self.cache_v, self.cache_k
 
         attention_score = query @ key.transpose(2, 3)  # [b, num_heads, seq_len, seq_len]
 
-        seq_len_q, seq_len_k = query.shape[-2], key.shape[-2]
-        if use_cache:
-            mask_bool = self.mask.bool()[self.ptr_current_pos: self.ptr_current_pos + seq_len_q, :seq_len_k]
-            self.ptr_current_pos += seq_len_q
-        else:
-            mask_bool = self.mask.bool()[:seq_len_q, :seq_len_k]
-
-        mask_bool = mask_bool[None, None, :, :]
-        attention_score.masked_fill_(mask_bool, -torch.inf)  # 因果注意力
+        seq_len_q, seq_len_k = attention_score.size(-2), attention_score.size(-1)
+        causal_mask = self.mask[:seq_len_q, :seq_len_k].to(dtype=torch.bool)
+        attention_score.masked_fill_(causal_mask[None, None, :, :], -torch.inf)  # 因果注意力
         attention_weight = torch.softmax(attention_score / key.shape[-1] ** 0.5, dim=-1)
         attention_weight = self.dropout_layer(attention_weight)
 
@@ -110,7 +102,6 @@ class MultiHeadAttention(nn.Module):
 
     def _reset_cache(self):
         self.cache_k, self.cache_v = None, None
-        self.ptr_current_pos = 0
 
 
 class GELU(nn.Module):

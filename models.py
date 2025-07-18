@@ -60,7 +60,8 @@ class GPTModel(nn.Module):
         _, seq_len = x.shape
         x = self.token_embedding(x)
         if use_cache:
-            pos_ids = torch.arange(self.current_pos, self.current_pos + seq_len, device=x.device)
+            pos_ids = torch.arange(self.current_pos, self.current_pos + seq_len,
+                                   device=x.device) % self.position_embedding.num_embeddings
             self.current_pos += seq_len
         else:
             pos_ids = torch.arange(0, seq_len, device=x.device)
