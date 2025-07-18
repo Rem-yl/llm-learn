@@ -87,7 +87,7 @@ def main():
         })
 
         idx = text2ids(gen_txt, tokenizer)
-        gen_ids = generate_text(model, idx, max_tokens=10, context_size=128, use_cache=True)
+        gen_ids = generate_text(model, idx, max_tokens=10, context_size=128, use_cache=True, temperature=0.7, top_k=10)
         gened_txt = ids2text(gen_ids, tokenizer)
         print("*" * 50)
         print("Generated Text: \n")

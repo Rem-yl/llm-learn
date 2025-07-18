@@ -47,7 +47,7 @@ def ids2text(ids: torch.Tensor, tokenizer: tiktoken.Encoding) -> str:
     return decoded
 
 
-def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_size: int, use_cache: bool = False) -> torch.Tensor:
+def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_size: int, temperature=0.0, top_k=None, use_cache: bool = False) -> torch.Tensor:
     """
     Generate text using a GPT model.
 
@@ -78,13 +78,40 @@ def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_s
             logits = model(idx[:, -context_size:], use_cache=True)  # 使用上下文来填充缓存
 
             for _ in range(max_tokens):
-                prob = torch.softmax(logits[:, -1], dim=-1)
+                logits = logits[:, -1]
+                if top_k is not None:
+                    top_logits, _ = torch.topk(logits, top_k)
+                    min_val = top_logits[:, -1]
+                    logits = torch.where(
+                        logits < min_val,
+                        torch.full_like(logits, float('-inf')),
+                        logits
+                    )
+
+                if temperature > 0.0:
+                    logits = logits / temperature
+
+                prob = torch.softmax(logits, dim=-1)
                 next_id = torch.multinomial(prob, num_samples=1)
                 idx = torch.cat((idx, next_id), dim=1)
                 logits = model(next_id, use_cache=True)  # 每次只需要一个token, 之前的上下文已经保存在缓存中
         else:
             for _ in range(max_tokens):
                 logits = model(idx[:, -context_size:], use_cache=False)
+                logits = logits[:, -1]
+
+                if top_k is not None:
+                    top_logits, _ = torch.topk(logits, top_k)
+                    min_val = top_logits[:, -1]
+                    logits = torch.where(
+                        logits < min_val,
+                        torch.full_like(logits, float('-inf')),
+                        logits
+                    )
+
+                if temperature > 0.0:
+                    logits = logits / temperature
+
                 prob = torch.softmax(logits[:, -1], dim=-1)
                 next_id = torch.multinomial(prob, num_samples=1)
                 idx = torch.cat((idx, next_id), dim=1)
