@@ -15,9 +15,9 @@ class GPTDataset(Dataset):
         >>> len(dataset)
         2
 
-        This constructor tokenizes the input text using the provided tokenizer and 
-        creates input and target sequences for language modeling. The sequences are 
-        created with a specified maximum length and a given stride, allowing for 
+        This constructor tokenizes the input text using the provided tokenizer and
+        creates input and target sequences for language modeling. The sequences are
+        created with a specified maximum length and a given stride, allowing for
         overlapping sequences if desired.
 
         Args:
