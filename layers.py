@@ -5,24 +5,24 @@ import torch.nn as nn
 class MultiHeadAttention(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, num_heads: int, context_len: int = 1024, dropout: float = 0.1, bias: bool = False) -> None:
         """
-        Initialize the MultiHeadAttention module.
+        Initialize the MultiHeadAttention module. Use cache to save key and value tensors for efficient attention computation.
+
         Example:
-        >>> mha = MultiHeadAttention(32, 32, 8)
+        >>> in_dim, out_dim, num_heads, context_len = 32, 64, 8, 128
+        >>> mha = MultiHeadAttention(in_dim, out_dim, num_heads, context_len)
         >>> x = torch.randn(8, 10, 32)
         >>> out = mha(x)
         >>> out.shape
-        torch.Size([8, 10, 32])
+        torch.Size([8, 10, 64])
 
         Args:
             in_dim (int): input dimension of the module
             out_dim (int): output dimension of the module
             num_heads (int): number of attention heads
-            context_len (int, optional): maximum context length. Defaults to 1024.
-            dropout (float, optional): dropout rate for the attention weights. Defaults to 0.1.
-            bias (bool, optional): whether to use bias in the linear layers. Defaults to False.
-
-        Raises:
-            AssertionError: if out_dim is not divisible by num_heads
+            context_len (int, optional): maximum context length for the attention mechanism. Defaults to 1024.
+            dropout (float, optional): dropout rate for the attention weights and feedforward network. Defaults to 0.1.
+            bias (bool, optional): whether to include bias in linear layers. Defaults to False.
+            use_cache (bool, optional): whether to use the cache for the key and value tensors. Defaults to True.
         """
         super().__init__()
         assert out_dim % num_heads == 0, "out_dim must be divisible by num_heads"
@@ -43,10 +43,33 @@ class MultiHeadAttention(nn.Module):
         self.dropout_layer = nn.Dropout(dropout)
 
         # 不会被当成模型参数, 但是需要保存和加载的张量
-        self.register_buffer("mask", torch.triu(torch.ones(context_len, context_len), diagonal=1))
+        self.register_buffer("mask", torch.triu(torch.ones(context_len, context_len), diagonal=1), persistent=False)
+        self.register_buffer("cache_k", None, persistent=False)
+        self.register_buffer("cache_v", None, persistent=False)
+        self.ptr_current_pos = 0    # 记录当前生成到第几个token
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache: bool = False) -> torch.Tensor:
+        """
+        Perform a forward pass through the MultiHeadAttention module.
+
+        Example:
+        >>> x = torch.randn(8, 10, 32)
+        >>> mha = MultiHeadAttention(32, 64, 8)
+        >>> out = mha(x)
+        >>> out.shape
+        torch.Size([8, 10, 64])
+
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch_size, sequence_length, in_dim].
+            use_cache (bool, optional): Whether to use the cache for the key and value tensors. Defaults to False.
+
+        Returns:
+            torch.Tensor: Output tensor of shape [batch_size, sequence_length, out_dim].
+        """
         batch_size, seq_len, _ = x.shape  # [b, seq_len, in_dim]
+        assert (
+            seq_len <= self.context_len
+        ), f"input sequence length {seq_len} exceeds the maximum context length {self.context_len}"
 
         query = self.query_layer(x)  # [b, seq_len, out_dim]
         key = self.key_layer(x)
@@ -57,8 +80,26 @@ class MultiHeadAttention(nn.Module):
         key = key.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         value = value.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
+        if use_cache:
+            if self.cache_v is None:
+                self.cache_v, self.cache_k = value, key
+            else:
+                self.cache_v = torch.cat((self.cache_v, value), dim=-2)
+                self.cache_k = torch.cat((self.cache_k, key), dim=-2)
+                self.ptr_current_pos += seq_len
+            value, key = self.cache_v, self.cache_k
+
         attention_score = query @ key.transpose(2, 3)  # [b, num_heads, seq_len, seq_len]
-        attention_score.masked_fill_(self.mask[:seq_len, :seq_len].bool(), -torch.inf)  # 因果注意力
+
+        seq_len_q, seq_len_k = query.shape[-2], key.shape[-2]
+        if use_cache:
+            mask_bool = self.mask.bool()[self.ptr_current_pos: self.ptr_current_pos + seq_len_q, :seq_len_k]
+            self.ptr_current_pos += seq_len_q
+        else:
+            mask_bool = self.mask.bool()[:seq_len_q, :seq_len_k]
+
+        mask_bool = mask_bool[None, None, :, :]
+        attention_score.masked_fill_(mask_bool, -torch.inf)  # 因果注意力
         attention_weight = torch.softmax(attention_score / key.shape[-1] ** 0.5, dim=-1)
         attention_weight = self.dropout_layer(attention_weight)
 
@@ -66,6 +107,10 @@ class MultiHeadAttention(nn.Module):
         out = (out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.out_dim))  # [b, seq_len, out_dim]
 
         return self.out_layer(out)
+
+    def _reset_cache(self):
+        self.cache_k, self.cache_v = None, None
+        self.ptr_current_pos = 0
 
 
 class GELU(nn.Module):
@@ -135,27 +180,28 @@ class TransformerBlock(nn.Module):
         self.ffn = FeedForward(emb_dim)
         self.dropout_layer = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache: bool = False) -> torch.Tensor:
         """
         Performs a forward pass through the TransformerBlock module.
 
         Example:
-        >>> transformer_block = TransformerBlock(32, 128, 8, 0.1, False)
         >>> x = torch.randn(8, 10, 32)
+        >>> x.shape
+        torch.Size([8, 10, 32])
         >>> out = transformer_block(x)
         >>> out.shape
         torch.Size([8, 10, 32])
 
         Args:
             x (torch.Tensor): Input tensor of shape [batch_size, sequence_length, emb_dim].
+            use_cache (bool, optional): Whether to use the cache for the key and value tensors. Defaults to False.
 
         Returns:
-            torch.Tensor: Output tensor of shape [batch_size, sequence_length, emb_dim] after
-            passing through layer normalization, multi-head attention, dropout, and feedforward network.
+            torch.Tensor: Output tensor of shape [batch_size, sequence_length, emb_dim].
         """
         shortcut = x
         x = self.layer_norm1(x)
-        x = self.mha(x)
+        x = self.mha(x, use_cache=use_cache)
         x = self.dropout_layer(x)
         x = shortcut + x
 

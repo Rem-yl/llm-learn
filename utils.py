@@ -12,7 +12,7 @@ def text2ids(text: str, tokenizer: tiktoken.Encoding) -> torch.Tensor:
     >>> tokenizer = tiktoken.get_encoding("gpt2")
     >>> ids = text2ids(text, tokenizer)
     >>> ids.shape
-    torch.Size([1, 5])
+    torch.Size([1, 4])
 
     Args:
         text (str): The text to convert.
@@ -34,7 +34,7 @@ def ids2text(ids: torch.Tensor, tokenizer: tiktoken.Encoding) -> str:
     >>> tokenizer = tiktoken.get_encoding("gpt2")
     >>> text = ids2text(ids, tokenizer)
     >>> text
-    'Hello'
+    '"#$%&'
 
     Args:
         ids (torch.Tensor): A tensor of shape [1, sequence_length] containing the token ids.
@@ -47,13 +47,9 @@ def ids2text(ids: torch.Tensor, tokenizer: tiktoken.Encoding) -> str:
     return decoded
 
 
-def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_size: int) -> torch.Tensor:
+def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_size: int, use_cache: bool = False) -> torch.Tensor:
     """
-    Generate text using the given model.
-
-    This function takes an input tensor idx, runs it through the model, and generates
-    the next token based on the output probabilities. This is repeated until max_tokens
-    tokens have been generated.
+    Generate text using a GPT model.
 
     Example:
     >>> vocab_size, emb_dim, context_len, n_heads, n_layers = 100, 32, 128, 8, 4
@@ -61,27 +57,42 @@ def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_s
     >>> idx = torch.randint(0, 100, (8, 10))
     >>> idx.shape
     torch.Size([8, 10])
-    >>> generated_text = generate_text(model, idx, 10, 10)
-    >>> generated_text.shape
+    >>> generated_ids = generate_text(model, idx, max_tokens=10, context_size=10, use_cache=True)
+    >>> generated_ids.shape
     torch.Size([8, 20])
 
     Args:
-        model (GPTModel): The model to use for generation.
-        idx (torch.Tensor): The input tensor of shape [batch_size, sequence_length].
-        max_tokens (int): The maximum number of tokens to generate.
-        context_size (int): The number of tokens to use as context when generating the next token.
+        model (GPTModel): The GPT model to use for generation.
+        idx (torch.Tensor): The starting token ids. Shape is [batch_size, sequence_length].
+        max_tokens (int): The number of tokens to generate.
+        context_size (int): The maximum context size.
+        use_cache (bool, optional): Whether to use the cache for the key-value pairs. Defaults to False.
 
     Returns:
-        torch.Tensor: The generated text as a tensor of shape [batch_size, sequence_length].
+        torch.Tensor: The generated text. Shape is [batch_size, sequence_length + max_tokens].
     """
-    for _ in range(max_tokens):
-        idx_cond = idx[:, -context_size:]
+    model.eval()
+    with torch.no_grad():
+        if use_cache:
+            model._reset_kv_cache()
+            logits = model(idx[:, -context_size:], use_cache=True)  # 使用上下文来填充缓存
 
-        with torch.no_grad():
-            logits = model(idx_cond)
-            logits = logits[:, -1, :]
-            probs = torch.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
-            idx = torch.cat((idx, idx_next), dim=1)
+            for _ in range(max_tokens):
+                prob = torch.softmax(logits[:, -1], dim=-1)
+                next_id = torch.multinomial(prob, num_samples=1)
+                idx = torch.cat((idx, next_id), dim=1)
+                logits = model(next_id, use_cache=True)  # 每次只需要一个token, 之前的上下文已经保存在缓存中
+        else:
+            for _ in range(max_tokens):
+                logits = model(idx[:, -context_size:], use_cache=False)
+                prob = torch.softmax(logits[:, -1], dim=-1)
+                next_id = torch.multinomial(prob, num_samples=1)
+                idx = torch.cat((idx, next_id), dim=1)
 
-    return idx
+        return idx
+
+
+if __name__ == "__main__":
+    import doctest
+
+    doctest.testmod()

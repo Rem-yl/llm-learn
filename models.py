@@ -30,45 +30,55 @@ class GPTModel(nn.Module):
         self.position_embedding = nn.Embedding(context_len, emb_dim)
         self.dropout_layer = nn.Dropout(dropout)
 
-        self.transformer_blocks = nn.Sequential(
-            *[
-                TransformerBlock(emb_dim, context_len, n_heads, dropout, False)
-                for _ in range(n_layers)
-            ]
+        self.transformer_blocks = nn.ModuleList(
+            [TransformerBlock(emb_dim, context_len, n_heads, dropout, False) for _ in range(n_layers)]
         )
         self.layer_norm = nn.LayerNorm(emb_dim)
         self.output_layer = nn.Linear(emb_dim, vocab_size, bias=False)
+        self.current_pos = 0
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache=False) -> torch.Tensor:
         """
-        Performs a forward pass through the GPT model.
+        Perform a forward pass through the GPT model.
 
         Example:
-        >>> vocab_size, emb_dim, context_len, n_heads, n_layers = 100, 32, 128, 8, 4
-        >>> model = GPTModel(vocab_size, emb_dim, context_len, n_heads, n_layers)
+        >>> model = GPTModel(100, 32, 128, 8, 4)
         >>> x = torch.randint(0, 100, (8, 10))
         >>> x.shape
         torch.Size([8, 10])
-        >>> logits = model(x)
-        >>> logits.shape
+        >>> out = model(x)
+        >>> out.shape
         torch.Size([8, 10, 100])
 
         Args:
-            x (torch.Tensor): Input tensor of token indices with shape [batch_size, sequence_length].
+            x (torch.Tensor): Input tensor of shape [batch_size, sequence_length].
+            use_cache (bool, optional): Whether to use the cache for the key-value pairs. Defaults to False.
 
         Returns:
-            torch.Tensor: Logits tensor with shape [batch_size, sequence_length, vocab_size] after
-            passing through token embeddings, positional embeddings, dropout, transformer blocks,
-            layer normalization, and the output linear layer.
+            torch.Tensor: Output tensor of shape [batch_size, sequence_length, vocab_size].
         """
-
+        _, seq_len = x.shape
         x = self.token_embedding(x)
-        x = x + self.position_embedding(torch.arange(x.shape[1], device=x.device))
+        if use_cache:
+            pos_ids = torch.arange(self.current_pos, self.current_pos + seq_len, device=x.device)
+            self.current_pos += seq_len
+        else:
+            pos_ids = torch.arange(0, seq_len, device=x.device)
+
+        pos_embedding = self.position_embedding(pos_ids).unsqueeze(0)
+        x += pos_embedding
         x = self.dropout_layer(x)
-        x = self.transformer_blocks(x)
+        for transformer_block in self.transformer_blocks:
+            x = transformer_block(x, use_cache=use_cache)
         x = self.layer_norm(x)
         x = self.output_layer(x)
         return x
+
+    def _reset_kv_cache(self):
+        for transformer_block in self.transformer_blocks:
+            transformer_block.mha._reset_cache()
+
+        self.current_pos = 0
 
 
 if __name__ == "__main__":
