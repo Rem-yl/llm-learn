@@ -5,3 +5,7 @@ __pycache__
 .ruff_cache
 wandb
 outputs
+
+*.pth
+checkpoints
+*.safetensors
