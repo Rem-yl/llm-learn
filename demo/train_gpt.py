@@ -1,9 +1,13 @@
+import os
 import urllib.request
 from pathlib import Path
+from typing import Union
 
+import hydra
 import tiktoken
 import torch
 import torch.nn as nn
+from omegaconf import DictConfig, OmegaConf
 
 import wandb
 from datasets import build_gpt_dataloader
@@ -17,7 +21,7 @@ file_path = Path(r"data/the-verdict.txt")
 url = "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt"
 
 
-def download_data() -> None:
+def download_data(url: str) -> None:
     if not file_path.exists():
         with urllib.request.urlopen(url) as response:
             text_data = response.read().decode('utf-8')
@@ -25,7 +29,7 @@ def download_data() -> None:
             file.write(text_data)
 
 
-def get_train_val_dataloader(file_path: Path, train_ratio=0.9):
+def get_train_val_dataloader(file_path: Union[Path, str], train_ratio=0.9):
     with open(file_path, "r", encoding="utf-8") as file:
         text_data = file.read()
     split_idx = int(train_ratio * len(text_data))
@@ -37,19 +41,23 @@ def get_train_val_dataloader(file_path: Path, train_ratio=0.9):
     return train_loader, val_loader
 
 
-def main():
-    wandb.init(project="GPTModel Train", name="Demo")
+@hydra.main(config_path="../conf", config_name="demo_gpt", version_base="1.1")
+def main(cfg: DictConfig) -> None:
+    os.chdir(hydra.utils.get_original_cwd())
+    print("Config:")
+    print(OmegaConf.to_yaml(cfg))
 
-    download_data()
-    train_loader, val_loader = get_train_val_dataloader(file_path)
-
-    model = GPTModel(vocab_size=50257, emb_dim=32, context_len=1024, n_heads=8, n_layers=4).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    wandb.init(project=cfg.wandb.project, name=cfg.wandb.name)
+    download_data(cfg.dataset.url)
+    train_loader, val_loader = get_train_val_dataloader(cfg.dataset.file_path)
+    model = GPTModel(vocab_size=cfg.model.vocab_size, emb_dim=cfg.model.emb_dim,
+                     context_len=cfg.model.context_len, n_heads=cfg.model.n_heads, n_layers=cfg.model.n_layers).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.optimizer.lr)
     loss_fn = nn.CrossEntropyLoss()
 
     gen_txt = "Hello, i love"
     tokenizer = tiktoken.get_encoding("gpt2")
-    epochs = 50
+    epochs = cfg.dataset.epochs
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0

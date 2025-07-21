@@ -1,0 +1,23 @@
+wandb:
+  project: GPTModel Train
+  name: Demo
+
+model:
+  vocab_size: 50257
+  emb_dim: 32
+  context_len: 1024
+  n_heads: 8
+  n_layers: 4
+
+optimizer:
+  name: Adam
+  lr: 1e-3
+
+dataset:
+  file_path: data/the-verdict.txt
+  url: https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt
+  epochs: 50
+  batch_size: 2
+  max_len: 256
+  stride: 128
+  num_workers: 0

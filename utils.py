@@ -84,7 +84,7 @@ def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_s
                     min_val = top_logits[:, -1]
                     logits = torch.where(
                         logits < min_val,
-                        torch.full_like(logits, float('-inf')),
+                        torch.tensor(float('-inf'), device=logits.device),
                         logits
                     )
 
@@ -105,7 +105,7 @@ def generate_text(model: GPTModel, idx: torch.Tensor, max_tokens: int, context_s
                     min_val = top_logits[:, -1]
                     logits = torch.where(
                         logits < min_val,
-                        torch.full_like(logits, float('-inf')),
+                        torch.tensor(float('-inf'), device=logits.device),
                         logits
                     )
 
