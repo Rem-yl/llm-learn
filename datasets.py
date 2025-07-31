@@ -3,6 +3,12 @@ from typing import List, Tuple
 import tiktoken
 import torch
 from torch.utils.data import DataLoader, Dataset
+import os
+from pathlib import Path
+import shutil
+import zipfile
+import urllib.request
+import pandas as pd
 
 
 class GPTDataset(Dataset):
@@ -71,6 +77,117 @@ def build_gpt_dataloader(text: str, batch_size: int, max_len: int = 256, stride:
     tokenizer = tiktoken.get_encoding("gpt2")
     dataset = GPTDataset(text, tokenizer, max_len, stride)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, num_workers=num_workers)
+
+
+def download_and_unzip_spam_data(url: str, data_root: str | Path, file_name: str) -> None:
+    """
+    Downloads a zip file containing a text dataset, unzips it, and renames the extracted text file to a CSV file.
+    Example:
+    >>> url = "https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip"
+    >>> data_root = "data"
+    >>> file_name = "sms_spam_collection"
+    >>> download_and_unzip_spam_data(url, data_root, file_name)
+    CSV file already exists at data/sms_spam_collection.csv
+
+    Args:
+        url (str): The URL of the zip file containing the text dataset.
+        data_root (str | Path): The directory where the zip file should be saved.
+        file_name (str): The base name of the saved CSV file.
+
+    Returns:
+        None
+    """
+    if isinstance(data_root, str):
+        data_root = Path(data_root)
+
+    if not data_root.exists():
+        data_root.mkdir(parents=True)
+
+    zip_path = data_root / f"{file_name}.zip"
+    csv_path = data_root / f"{file_name}.csv"
+    ori_path = data_root / f"{file_name}" / "SMSSpamCollection"
+
+    if csv_path.exists():
+        print(f"CSV file already exists at {csv_path}")
+        return
+
+    with urllib.request.urlopen(url) as response:
+        with open(zip_path, "wb") as out_file:
+            out_file.write(response.read())
+
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(data_root/file_name)
+
+    os.rename(ori_path, csv_path)
+    print(f"File downloaded and saved as {csv_path}")
+    zip_path.unlink()
+    shutil.rmtree(ori_path.parent)
+
+
+class SpamDataset(Dataset):
+    def __init__(self, csv_path: str | Path, max_len: int = 1024, tokenizer: tiktoken.Encoding = tiktoken.get_encoding("gpt2")) -> None:
+        """
+        Initialize the SpamDataset.
+
+        Args:
+            csv_path (str | Path): The path to the CSV file containing the text dataset.
+            max_len (int, optional): The maximum length of each sequence in tokens. Defaults to 1024.
+            tokenizer (tiktoken.Encoding, optional): The tokenizer to use for encoding the text. Defaults to gpt2.
+
+        Returns:
+            None
+        """
+        self.csv_path = Path(csv_path)
+        self.max_len = max_len
+        self.tokenizer = tokenizer
+        self.label = []
+        self.data = []
+        self._load_dataset()
+
+    def _load_dataset(self):
+        df = pd.read_csv(self.csv_path, sep=",", header=None, names=["label", "text"])
+        pad_id = self.tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
+        label_map = {"ham": 0, "spam": 1}
+
+        for _, row in df.iterrows():
+            label = label_map[row["label"]]
+            text = row["text"]
+            token_ids = self.tokenizer.encode(text, allowed_special={"<|endoftext|>"})
+
+            # padding
+            if len(token_ids) > self.max_len:
+                token_ids = token_ids[:self.max_len]
+            else:
+                token_ids += [pad_id] * (self.max_len - len(token_ids))
+
+            self.data.append(torch.tensor(token_ids))
+            self.label.append(torch.tensor(label))
+
+    def __len__(self):
+        return len(self.label)
+
+    def __getitem__(self, idx: int):
+        label = self.label[idx]
+        ids = self.data[idx]
+
+        return label, ids
+
+
+def build_spam_dataloader(csv_path: str | Path, batch_size: int = 8, max_len: int = 1024, tokenizer: tiktoken.Encoding = tiktoken.get_encoding("gpt2")) -> DataLoader:
+    """
+    Builds a PyTorch DataLoader for the Spam dataset.
+
+    Args:
+        csv_path (str | Path): The path to the CSV file containing the text dataset.
+        batch_size (int, optional): The batch size for the DataLoader. Defaults to 8.
+        max_len (int, optional): The maximum length of each sequence in tokens. Defaults to 1024.
+        tokenizer (tiktoken.Encoding, optional): The tokenizer to use for encoding the text. Defaults to gpt2.
+
+    Returns:
+        DataLoader: A PyTorch DataLoader for the Spam dataset.
+    """
+    dataset = SpamDataset(csv_path, max_len, tokenizer)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
 if __name__ == "__main__":

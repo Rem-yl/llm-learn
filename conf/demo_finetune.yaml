@@ -1,0 +1,5 @@
+defaults:
+  - model:  gpt2_small
+  - dataset: spam
+
+run_name: "gpt-finetune-spam"

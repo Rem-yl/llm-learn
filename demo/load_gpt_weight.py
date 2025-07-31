@@ -5,14 +5,17 @@ import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 from safetensors.torch import load_file
+import urllib.request
 
 from models import GPTModel
 
-url = r"https://huggingface.co/openai-community/gpt2/resolve/main/model.safetensors"
-output_file = r"model-gpt2.safetensors"
+
+def download_weights(url: str, file_name: str) -> None:
+    if not os.path.exists(file_name):
+        urllib.request.urlretrieve(url, file_name)
 
 
-def load_state_dict(output_file) -> Dict[str, torch.Tensor]:
+def load_state_dict(output_file: str) -> Dict[str, torch.Tensor]:
     state_dict = load_file(output_file)
     return state_dict
 
@@ -23,10 +26,12 @@ def main(cfg: DictConfig) -> None:
     print("Config:")
     print(OmegaConf.to_yaml(cfg))
 
+    download_weights(cfg.model.url, cfg.model.file_name)
+
     model = GPTModel(vocab_size=cfg.model.vocab_size, emb_dim=cfg.model.emb_dim,
                      context_len=cfg.model.context_len, n_heads=cfg.model.n_heads, n_layers=cfg.model.n_layers, bias=cfg.model.bias)
 
-    state_dict = load_state_dict(output_file)
+    state_dict = load_state_dict(cfg.model.file_name)
     model.load_weights(state_dict)
     model.eval()
 

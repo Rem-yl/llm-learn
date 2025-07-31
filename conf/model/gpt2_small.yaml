@@ -1,4 +1,5 @@
-file_name: gpt2-small-124M.pth
+url: https://huggingface.co/openai-community/gpt2/resolve/main/model.safetensors
+file_name: model-gpt2.safetensors
 vocab_size: 50257
 context_len: 1024
 drop_rate: 0.0

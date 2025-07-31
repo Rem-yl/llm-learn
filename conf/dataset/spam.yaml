@@ -1,0 +1,7 @@
+url: https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip
+data_root: data
+file_name: sms_spam_collection
+max_len: 128
+batch_size: 32
+epochs: 10
+lr: 0.005

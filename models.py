@@ -3,6 +3,9 @@ from typing import Dict
 import tiktoken
 import torch
 import torch.nn as nn
+import os
+import urllib.request
+
 
 from layers import TransformerBlock
 from utils import assign, ids2text, text2ids
@@ -88,6 +91,14 @@ class GPTModel(nn.Module):
         self.current_pos = 0
 
     def load_weights(self, params: Dict[str, torch.Tensor]):
+        """
+        #TODO: 加载权重后的模型生成的文体没有语义
+        Loads weights from a parameter dictionary into the model.
+
+        Args:
+            params (Dict[str, torch.Tensor]): A dictionary mapping parameter names to their weights.
+        """
+
         self.position_embedding.weight = assign(self.position_embedding.weight, params["wpe.weight"])
         self.token_embedding.weight = assign(self.token_embedding.weight, params["wte.weight"])
 
@@ -215,6 +226,27 @@ class GPTModel(nn.Module):
                                       use_cache=True, temperature=temperature, top_k=top_k)
         gened_txt = ids2text(gen_ids, tokenizer)
         return gened_txt
+
+
+def download_weights(url: str, file_name: str) -> None:
+    """
+    Downloads a file from the specified URL and saves it with the given file name.
+
+    Example:
+    >>> url = "https://huggingface.co/openai-community/gpt2/resolve/main/model.safetensors"
+    >>> file_name = "model.safetensors"
+    >>> download_weights(url, file_name)
+
+    Args:
+        url (str): The URL from which to download the file.
+        file_name (str): The name of the file to save the downloaded content.
+
+    Returns:
+        None
+    """
+
+    if not os.path.exists(file_name):
+        urllib.request.urlretrieve(url, file_name)
 
 
 if __name__ == "__main__":

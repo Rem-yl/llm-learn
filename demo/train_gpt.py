@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Union
 
 import hydra
-import tiktoken
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
@@ -12,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 import wandb
 from datasets import build_gpt_dataloader
 from models import GPTModel
-from utils import generate_text, ids2text, text2ids
+
 
 torch.manual_seed(123)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,8 +54,7 @@ def main(cfg: DictConfig) -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.optimizer.lr)
     loss_fn = nn.CrossEntropyLoss()
 
-    gen_txt = "Hello, i love"
-    tokenizer = tiktoken.get_encoding("gpt2")
+    txt = "Hello, i love"
     epochs = cfg.dataset.epochs
     for epoch in range(epochs):
         model.train()
@@ -94,9 +92,7 @@ def main(cfg: DictConfig) -> None:
             "val_loss": avg_val_loss
         })
 
-        idx = text2ids(gen_txt, tokenizer)
-        gen_ids = generate_text(model, idx, max_tokens=10, context_size=128, use_cache=True, temperature=0.7, top_k=10)
-        gened_txt = ids2text(gen_ids, tokenizer)
+        gened_txt = model.gen_text(txt, max_tokens=20, context_size=1024, temperature=1.0, top_k=10)
         print("*" * 50)
         print("Generated Text: \n")
         print(f"{gened_txt}")
