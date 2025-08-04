@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import tiktoken
 import torch
@@ -9,6 +9,9 @@ import shutil
 import zipfile
 import urllib.request
 import pandas as pd
+from log import logger
+import json
+from functools import partial
 
 
 class GPTDataset(Dataset):
@@ -137,7 +140,10 @@ class SpamDataset(Dataset):
         Returns:
             None
         """
-        self.csv_path = Path(csv_path)
+        if isinstance(csv_path, str):
+            csv_path = Path(csv_path)
+
+        self.csv_path = csv_path
         self.max_len = max_len
         self.tokenizer = tokenizer
         self.label = []
@@ -188,6 +194,180 @@ def build_spam_dataloader(csv_path: str | Path, batch_size: int = 8, max_len: in
     """
     dataset = SpamDataset(csv_path, max_len, tokenizer)
     return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+
+def download_instruction_data(url: str, data_root: str | Path, file_name: str = "instruction.json") -> None:
+    """
+    Downloads a file from the specified URL and saves it with the given file name.
+
+    Example:
+    >>> url = "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
+    >>> data_root = "data"
+    >>> file_name = "instruction.json"
+    >>> download_instruction_data(url, data_root, file_name)
+
+    Args:
+        url (str): The URL from which to download the file.
+        data_root (str | Path): The directory where the file should be saved.
+        file_name (str, optional): The name of the file to save the downloaded content. Defaults to "instruction.json".
+
+    Returns:
+        None
+    """
+    if isinstance(data_root, str):
+        data_root = Path(data_root)
+
+    if not data_root.exists():
+        data_root.mkdir(parents=True)
+
+    ori_path = data_root / file_name
+
+    if ori_path.exists():
+        logger.info(f"File already exists at {ori_path}")
+        return
+
+    with urllib.request.urlopen(url) as response:
+        text_data = response.read().decode("utf-8")
+
+    with open(ori_path, "w", encoding="utf-8") as file:
+        file.write(text_data)
+
+    logger.info(f"File downloaded and saved as {ori_path}")
+
+
+class InstructionDataset(Dataset):
+    def __init__(self, path: str | Path, tokenizer: tiktoken.Encoding = tiktoken.get_encoding("gpt2")) -> None:
+        super().__init__()
+
+        if isinstance(path, str):
+            path = Path(path)
+
+        self.path = path
+        self.tokenizer = tokenizer
+        self.data: List[Dict[str, str]] = []
+        self.encoded_texts: List[List[int]] = []
+        self._load_dataset()
+
+    @staticmethod
+    def format_input(entry: Dict[str, str]) -> str:
+        instruction_text = (
+            f"Below is an instruction that describes a task. "
+            f"Write a response that appropriately completes the request."
+            f"\n\n### Instruction:\n{entry['instruction']}"
+        )
+
+        input_text = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
+
+        return instruction_text + input_text
+
+    def _load_dataset(self) -> None:
+        with open(self.path, "r", encoding="utf-8") as file:
+            self.data = json.load(file)
+
+        for entry in self.data:
+            instruction_text = self.format_input(entry)
+            response_text = f"\n\n### Response:\n{entry['output']}"
+            full_text = instruction_text + response_text
+            self.encoded_texts.append(
+                self.tokenizer.encode(full_text)
+            )
+
+    def __getitem__(self, index):
+        return self.encoded_texts[index]
+
+    def __len__(self):
+        return len(self.data)
+
+
+def instruction_collate_fn(batch, pad_token_id: int = 50256, ignore_index: int = -100, max_len: int = 1024, device="cpu"):
+    """
+    A collate function for the instruction dataset.
+    Example:
+    >>> batch = [[0, 1, 2, 3, 4], [5, 6], [7, 8, 9]]
+    >>> inputs, targets = instruction_collate_fn(batch)
+    >>> inputs
+    tensor([[    0,     1,     2,     3,     4],
+            [    5,     6, 50256, 50256, 50256],
+            [    7,     8,     9, 50256, 50256]])
+    >>> targets
+    tensor([[    1,     2,     3,     4, 50256],
+            [    6, 50256,  -100,  -100,  -100],
+            [    8,     9, 50256,  -100,  -100]])
+
+    Args:
+        batch: A list of instruction examples.
+        pad_token_id: The token id to use for padding.
+        ignore_index: The index to use for padding in the target tensor.
+        max_len: The maximum length of the input and target tensors.
+        device: The device to use for the tensors.
+
+    Returns:
+        A tuple of two tensors, the input tensor and the target tensor.
+    """
+    batch_max_length = max(len(item)+1 for item in batch)
+
+    inputs_lst, targets_lst = [], []
+
+    for item in batch:
+        new_item = item.copy()
+        new_item += [pad_token_id]
+        padded = (
+            new_item + [pad_token_id] *
+            (batch_max_length - len(new_item))
+        )
+        inputs = torch.tensor(padded[:-1])
+        targets = torch.tensor(padded[1:])
+
+        mask = targets == pad_token_id
+        indices = torch.nonzero(mask).squeeze()
+        if indices.numel() > 1:
+            targets[indices[1:]] = ignore_index  # 计算交叉熵损失时忽略
+
+        if max_len:
+            inputs = inputs[:max_len]
+            targets = targets[:max_len]
+
+        inputs_lst.append(inputs)
+        targets_lst.append(targets)
+
+    inputs_tensor = torch.stack(inputs_lst).to(device)
+    targets_tensor = torch.stack(targets_lst).to(device)
+    return inputs_tensor, targets_tensor
+
+
+def build_instruction_dataloader(
+    path: str | Path,
+    batch_size: int = 8,
+    ignore_index: int = -100,
+    max_len: int = 1024,
+    tokenizer: tiktoken.Encoding = tiktoken.get_encoding("gpt2"),
+    device="cpu",
+) -> DataLoader:
+    """
+    Builds a PyTorch DataLoader for the instruction dataset.
+
+    Args:
+        path (str | Path): The path to the JSON file containing the instruction dataset.
+        batch_size (int, optional): The batch size for the DataLoader. Defaults to 8.
+        ignore_index (int, optional): The index to use for padding in the target tensor. Defaults to -100.
+        max_len (int, optional): The maximum length of the input and target tensors. Defaults to 1024.
+        tokenizer (tiktoken.Encoding, optional): The tokenizer to use for encoding the text. Defaults to gpt2.
+        device (str, optional): The device to use for the tensors. Defaults to "cpu".
+
+    Returns:
+        DataLoader: A PyTorch DataLoader for the instruction dataset.
+    """
+    dataset = InstructionDataset(path, tokenizer)
+    pad_token_id = tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"})[0]
+    collate_fn = partial(
+        instruction_collate_fn,
+        pad_token_id=pad_token_id,
+        ignore_index=ignore_index,
+        max_len=max_len,
+        device=device,
+    )
+
+    return DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 
 
 if __name__ == "__main__":

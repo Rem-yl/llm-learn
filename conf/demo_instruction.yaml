@@ -1,0 +1,5 @@
+defaults:
+  - model:  gpt2_small
+  - dataset: instruction
+
+run_name: "gpt-finetune-instruction"

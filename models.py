@@ -5,8 +5,9 @@ import torch
 import torch.nn as nn
 import os
 import urllib.request
+from omegaconf import DictConfig
 
-
+from safetensors.torch import load_file
 from layers import TransformerBlock
 from utils import assign, ids2text, text2ids
 
@@ -247,6 +248,29 @@ def download_weights(url: str, file_name: str) -> None:
 
     if not os.path.exists(file_name):
         urllib.request.urlretrieve(url, file_name)
+
+
+def download_and_load_weights(cfg: DictConfig) -> GPTModel:
+    """
+    Downloads the model weights from the specified URL and loads them into a GPTModel instance.
+
+    Args:
+        cfg (DictConfig): Configuration object containing model parameters such as URL, file name, 
+                          vocabulary size, embedding dimension, context length, number of heads, 
+                          number of layers, and bias setting.
+
+    Returns:
+        GPTModel: An instance of the GPTModel with weights loaded from the specified file.
+    """
+
+    download_weights(cfg.model.url, cfg.model.file_name)
+    model = GPTModel(vocab_size=cfg.model.vocab_size, emb_dim=cfg.model.emb_dim,
+                     context_len=cfg.model.context_len, n_heads=cfg.model.n_heads, n_layers=cfg.model.n_layers, bias=cfg.model.bias)
+
+    state_dict = load_file(cfg.model.file_name)
+    model.load_weights(state_dict)
+
+    return model
 
 
 if __name__ == "__main__":

@@ -1,0 +1,9 @@
+url: https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json
+data_root: data
+file_name: instruction
+split_rate: 0.8
+max_len: 128
+batch_size: 32
+epochs: 10
+lr: 5e-5
+weight_decay: 0.1

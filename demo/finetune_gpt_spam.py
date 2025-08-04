@@ -5,23 +5,12 @@ import torch
 import torch.nn as nn
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from safetensors.torch import load_file
+
 from pathlib import Path
 import pandas as pd
 from sklearn.metrics import roc_auc_score
-from models import GPTModel, download_weights
+from models import download_and_load_weights
 from datasets import download_and_unzip_spam_data, build_spam_dataloader
-
-
-def download_and_load_weights(cfg: DictConfig) -> GPTModel:
-    download_weights(cfg.model.url, cfg.model.file_name)
-    model = GPTModel(vocab_size=cfg.model.vocab_size, emb_dim=cfg.model.emb_dim,
-                     context_len=cfg.model.context_len, n_heads=cfg.model.n_heads, n_layers=cfg.model.n_layers, bias=cfg.model.bias)
-
-    state_dict = load_file(cfg.model.file_name)
-    model.load_weights(state_dict)
-
-    return model
 
 
 def split_spam_data(cfg: DictConfig) -> Tuple[Path, Path]:
