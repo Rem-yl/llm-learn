@@ -10,3 +10,5 @@ outputs
 checkpoints
 *.safetensors
 *.pt
+.vscode
+.pytest_cache
