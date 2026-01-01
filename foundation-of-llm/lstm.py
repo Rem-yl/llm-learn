@@ -52,8 +52,14 @@ class CustomLSTM(nn.Module):
         # x: [seq_len, batch_size, input_size]
         seq_len, batch_size, _ = x.size()
         if hx is None:
-            h0 = [x.new_zeros(batch_size, self.hidden_size) for _ in range(self.num_layers)]
-            c0 = [x.new_zeros(batch_size, self.hidden_size) for _ in range(self.num_layers)]
+            h0 = [
+                x.new_zeros(batch_size, self.hidden_size)
+                for _ in range(self.num_layers)
+            ]
+            c0 = [
+                x.new_zeros(batch_size, self.hidden_size)
+                for _ in range(self.num_layers)
+            ]
         else:
             h0, c0 = hx
 
@@ -89,9 +95,13 @@ class CharDataset(Dataset):
         return len(self.text) - self.seq_len
 
     def __getitem__(self, idx):
-        chunk = self.text[idx:idx+self.seq_len+1]
-        input_seq = torch.tensor([self.char2idx[c] for c in chunk[:-1]], dtype=torch.long)
-        target_seq = torch.tensor([self.char2idx[c] for c in chunk[1:]], dtype=torch.long)
+        chunk = self.text[idx : idx + self.seq_len + 1]
+        input_seq = torch.tensor(
+            [self.char2idx[c] for c in chunk[:-1]], dtype=torch.long
+        )
+        target_seq = torch.tensor(
+            [self.char2idx[c] for c in chunk[1:]], dtype=torch.long
+        )
         return input_seq, target_seq
 
 
@@ -115,12 +125,11 @@ def load_text(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
     # 简单预处理：转小写，去除多余空白和换行
-    text = text.lower().replace('\n', ' ').strip()
+    text = text.lower().replace("\n", " ").strip()
     return text
 
 
 def train():
-
     file_path = "data/test.txt"
     text = load_text(file_path)
 
@@ -129,7 +138,9 @@ def train():
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CharRNN(dataset.vocab_size, embedding_dim=32, hidden_size=64, num_layers=2).to(device)
+    model = CharRNN(
+        dataset.vocab_size, embedding_dim=32, hidden_size=64, num_layers=2
+    ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
     criterion = nn.CrossEntropyLoss()
     wandb.init(project="char-rnn", name="char-rnn")
@@ -138,7 +149,7 @@ def train():
     for epoch in range(10):
         total_loss = 0.0
         for inputs, targets in dataloader:
-            inputs = inputs.transpose(0, 1).to(device)   # 转为 [seq_len, batch]
+            inputs = inputs.transpose(0, 1).to(device)  # 转为 [seq_len, batch]
             targets = targets.transpose(0, 1).to(device)
 
             optimizer.zero_grad()
@@ -150,9 +161,9 @@ def train():
             wandb.log({"batch_loss": loss.item()})
             total_loss += loss.item()
 
-        print(f"Epoch {epoch+1}, Loss: {total_loss/len(dataloader):.4f}")
-        torch.save(model.state_dict(), f"checkpoints/char-rnn-epoch-{epoch+1}.pth")
-        wandb.log({"epoch_loss": total_loss/len(dataloader)})
+        print(f"Epoch {epoch + 1}, Loss: {total_loss / len(dataloader):.4f}")
+        torch.save(model.state_dict(), f"checkpoints/char-rnn-epoch-{epoch + 1}.pth")
+        wandb.log({"epoch_loss": total_loss / len(dataloader)})
 
     wandb.finish()
 

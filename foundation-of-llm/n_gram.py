@@ -13,7 +13,7 @@ class NGramModel:
             n (int, optional): The order of the n-gram model. Defaults to 2.
 
         Property:
-            self.ngram_counts (defaultdict): 存储上下文对应的下个单词出现的次数。 
+            self.ngram_counts (defaultdict): 存储上下文对应的下个单词出现的次数。
                 例如: defaultdict(<class 'collections.Counter'>, {('<s>',): Counter({'chapter': 1}), ('chapter',): Counter({'1': 1})})
                 表示 '<s>'对应下个单词为 'chapter' 的出现次数为 1, 'chapter' 对应下个单词为 '1' 的出现次数为 1, 对应公式中的 C(w_{i-n+1:i})
 
@@ -33,8 +33,8 @@ class NGramModel:
             tokens = ["<s>"] * (self.n - 1) + sentence + ["</s>"]
             self.vocab.update(tokens)
             for i in range(len(tokens) - self.n + 1):
-                context = tuple(tokens[i:i+self.n-1])
-                word = tokens[i+self.n-1]
+                context = tuple(tokens[i : i + self.n - 1])
+                word = tokens[i + self.n - 1]
                 self.ngram_counts[context][word] += 1
                 self.context_counts[context] += 1
 
@@ -49,7 +49,7 @@ class NGramModel:
             list of tuple: A list of (word, probability) tuples, sorted in descending order of probabilities.
                 Like: [('word1', 0.5), ('word2', 0.3), ('word3', 0.2)]
         """
-        context = tuple(context[-(self.n-1):])
+        context = tuple(context[-(self.n - 1) :])
         counts = self.ngram_counts.get(context, {})
         V = len(self.vocab)
         total = self.context_counts.get(context, 0) + V  # Laplace smoothing
@@ -57,7 +57,8 @@ class NGramModel:
         # 遍历整个词表self.vocab, 计算每个单词在上下文出现过的概率, 并进行排序
         return sorted(
             ((w, (counts.get(w, 0) + 1) / total) for w in self.vocab),
-            key=lambda x: x[1], reverse=True
+            key=lambda x: x[1],
+            reverse=True,
         )
 
     def generate(self, max_len=20):
@@ -79,8 +80,8 @@ class NGramModel:
         log_prob = 0
         count = 0
         for i in range(len(tokens) - self.n + 1):
-            context = tuple(tokens[i:i+self.n-1])
-            word = tokens[i+self.n-1]
+            context = tuple(tokens[i : i + self.n - 1])
+            word = tokens[i + self.n - 1]
             count_word = self.ngram_counts.get(context, {}).get(word, 0) + 1
             total = self.context_counts.get(context, 0) + V
             prob = count_word / total
@@ -107,8 +108,8 @@ def load_text_as_sentences(file_path):
 
     with open(file_path, "r", encoding="utf-8") as f:
         text = f.read().lower()
-    sentences = re.split(r'[。！？.!?]', text)
-    tokenized = [re.findall(r'\w+', s) for s in sentences if s.strip()]
+    sentences = re.split(r"[。！？.!?]", text)
+    tokenized = [re.findall(r"\w+", s) for s in sentences if s.strip()]
     return tokenized
 
 
