@@ -19,3 +19,6 @@
 - [Foundations-of-LLMs](https://github.com/ZJU-LLMs/Foundations-of-LLMs)
 - [awesome-llm](https://github.com/Hannibal046/Awesome-LLM)
 - [transformer](https://github.com/hyunwoongko/transformer)
+- [happy-llm](https://github.com/datawhalechina/happy-llm)
+- [a survey of llm](https://github.com/rucaibox/llmsurvey)
+- [大语言模型bilibili](https://space.bilibili.com/431850986/lists/4940683?type=season)
