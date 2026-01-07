@@ -101,3 +101,109 @@ def combine_heads(x: torch.Tensor):
 
     return x.contiguous().view(batch_size, seq_len, d_model)
 ```
+
+## FFN
+$$
+FFN(X) = Dropout(linear(relu(linear(x))))
+$$
+
+## LayerNorm
+LN在特征维度上，保证mean=0, var=1
+
+$$
+LN(x) = \gamma * \frac{x-\mu}{\sqrt{\sigma^2 + \epsilon}} + \beta
+$$
+
+step by step formula
+$$
+\begin{align}
+\text{Step 1: } & \mu = \frac{1}{d} \sum_{i=1}^{d} x_i \\
+\text{Step 2: } & \sigma^2 = \frac{1}{d} \sum_{i=1}^{d} (x_i - \mu)^2
+ \\
+\text{Step 3: } & \hat{x}_i = \frac{x_i - \mu}{\sqrt{\sigma^2 +
+\epsilon}} \\
+\text{Step 4: } & y_i = \gamma_i \hat{x}_i + \beta_i
+\end{align}
+$$
+
+```python
+class LayerNorm(nn.Module):
+    def __init__(self, d_model: int, eps=1e-5):
+        self.gamma = nn.Parameter(torch.ones(d_model))
+        self.beta = nn.Parameter(torch.zeros(d_model))
+        self.eps = eps
+
+    def forward(self, x):
+        # step1: compute mean and variance across the last dimension
+        mean = x.mean(dim=-1, keep_dim=True)
+        var = x.mean(dim=-1, keep_dim=True, unbias=False)
+
+        # step2: use normlize
+        x_norm = (x - mean) / torch.sqrt(var + self.eps)
+
+        # step3: apply learnable affine transformation
+        output = self.gamma * x_norm + self.beta
+
+        return output
+```
+
+**unbias说明**
+
+> Bessel's correction is the technique of using N-1 instead of N when computing the sample variance to get an unbiased estimator of the population variance.
+
+`unbias=True`表示使用`N-1`来做方差估计时的无偏修正。
+在LayerNorm的均值和方差计算中，我们默认得到了全部的真实数据，所以不需要进行无偏修正
+
+
+**When to Apply Bessel's Correction**
+
+Apply (use N-1):
+- Statistical inference (estimating population from sample)
+- Computing confidence intervals
+- Hypothesis testing
+- When using np.std() with ddof=1 (degrees of freedom delta)
+- Pandas .std() (uses N-1 by default)
+
+Don't apply (use N):
+- Layer Normalization (normalizing actual data, not estimating)
+- Batch Normalization (during forward pass)
+- Descriptive statistics of your complete dataset
+- When you have the entire population
+
+
+## Postion Embedding
+从注意力机制的计算过程我们可以发现，对与序列中的每个token，其他各个位置对于其来说都是平等的，即“我喜欢你”和“你喜欢我”在注意力机制看来完全是一样的。因此我们需要使用位置编码来保留输入的相对位置信息。
+
+**两种主要的embedding形式**
+1. 可学习的embedding
+  - bert, gpt等常用
+
+2. Sinusoidal Position Embeddings(Original Transformer)
+
+Formula:
+$$
+\begin{align}
+PE_{(pos, 2i)} &=
+\sin\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right) \\
+PE_{(pos, 2i+1)} &=
+\cos\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+\end{align}
+$$
+
+公式解读:
+- 低维度快速振荡，让模型捕捉细颗粒度
+Position Encoding Matrix:
+                  d_model dimensions →
+              ┌─────────────────────────────┐
+Position 0    │ sin(0/α₀) cos(0/α₁) sin...  │  High freq
+changes
+Position 1    │ sin(1/α₀) cos(1/α₁) sin...  │
+Position 2    │ sin(2/α₀) cos(2/α₁) sin...  │
+Position 3    │ sin(3/α₀) cos(3/α₁) sin...  │
+...           │    ...      ...      ...    │
+              └─────────────────────────────┘
+              ↑         ↑           ↑
+            Fast      Medium      Slow
+           frequency  frequency  frequency
+
+Where α₀ < α₁ < α₂ < ... (increasing wavelengths)
